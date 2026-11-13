@@ -1,0 +1,5 @@
+node_modules/
+*.log
+.DS_Store
+*-sauvegarde.json
+routine-os-20*.json

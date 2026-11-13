@@ -1,0 +1,23 @@
+const{test}=require('node:test'),a=require('node:assert/strict'),R=require('../core.js');const section=(id='s',type='todo')=>({id,date:'2026-11-13',type,title:'Essai',body:'',mood:'',archived:false,collapsed:false});const task=(id='t',extra={})=>R.task({title:'Action',section:'s',...extra},id);function state(){const s=R.empty();s.sections.push(section());s.tasks.push(task());return s;}
+test('empty valid',()=>a.deepEqual(R.valid(R.empty()),R.empty()));
+test('reject unknown format',()=>a.throws(()=>R.valid({version:1})));
+test('reject malformed dates',()=>a.throws(()=>R.day('2026-02-30')));
+test('allows empty due date',()=>a.equal(R.day('',true),''));
+test('reject duplicate task ids',()=>{const s=state();s.tasks.push(task());a.throws(()=>R.valid(s))});
+test('reject missing section',()=>{const s=state();s.tasks[0].section='missing';a.throws(()=>R.valid(s))});
+test('reject task link to note',()=>{const s=state();s.sections[0].type='note';a.throws(()=>R.valid(s))});
+test('strips unknown fields',()=>{const s=state();s.tasks[0].secret='x';a.equal(R.valid(s).tasks[0].secret,undefined)});
+test('retains note linebreaks',()=>{const s=state();s.sections.push({...section('n','note'),body:' a\n b '});a.equal(R.valid(s).sections[1].body,' a\n b ')});
+test('move to reserve leaves due unchanged',()=>{const s=state();s.tasks[0].due='2026-11-14';const n=R.moveTask(s,'t','');a.equal(n.tasks[0].due,s.tasks[0].due);a.equal(s.tasks[0].section,'s')});
+test('cannot move to archive',()=>{const s=state();s.sections.push({...section('a'),archived:true});a.throws(()=>R.moveTask(s,'t','a'))});
+test('reorder uses visible scope',()=>{const input=[{id:'a'},{id:'hidden'},{id:'b'}];a.deepEqual(R.reorder(input,'b',-1,['a','b']).map(t=>t.id),['b','hidden','a']);a.equal(input[0].id,'a')});
+test('reorder boundary no loss',()=>{const x=[{id:'a'},{id:'b'}];a.deepEqual(R.reorder(x,'a',-1),x)});
+test('archive preserves tasks',()=>{const s=state();s.sections[0].archived=true;a.equal(R.valid(s).tasks.length,1);a.equal(R.recommendations(s,'2026-11-13').length,0)});
+test('suggestions retain high energy essentials',()=>{const s=state();s.tasks[0].energy='high';s.settings.mode='essential';a.equal(R.recommendations(s,'2026-11-13').length,1)});
+test('suggestions omit waiting and done',()=>{const s=state();s.tasks[0].status='waiting';a.equal(R.recommendations(s,'2026-11-13').length,0)});
+test('due precedes priority',()=>{const s=state();s.tasks=[task('a',{priority:1}),task('b',{priority:3,due:'2026-11-14'})];a.equal(R.recommendations(s,'2026-11-13')[0].id,'b')});
+test('microsteps do not auto-complete action',()=>{const s=state();s.tasks[0].steps=[{text:'one',done:true}];a.equal(R.valid(s).tasks[0].status,'open')});
+test('merges new ids without overwriting conflicts',()=>{const s=state(),o=state();o.tasks[0].title='Other';o.tasks.push(task('new'));const m=R.merge(s,o);a.equal(m.conflicts,1);a.equal(m.added,1);a.equal(m.state.tasks[0].title,'Action')});
+test('export roundtrip',()=>{const s=state();a.deepEqual(R.valid(JSON.parse(JSON.stringify(s))),R.valid(s))});
+test('invalid input cannot mutate existing data',()=>{const s=state(),before=JSON.stringify(s);a.throws(()=>R.merge(s,{version:5}));a.equal(JSON.stringify(s),before)});
+test('invalid mood becomes unset, no inference',()=>{const s=state();s.sections[0].mood='diagnosis';a.equal(R.valid(s).sections[0].mood,'')});
